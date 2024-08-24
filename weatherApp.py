@@ -45,10 +45,13 @@ class WeatherApp:
 
 
     def get_weather_daily_data(self):
+        df_current = None
+
         url = f'https://api.openweathermap.org/data/3.0/onecall?lat={self.city_lat}&lon={self.city_lon}&units=metric&appid={self.weather_key}'
 
         res = requests.get(url)
         data = res.json()
+
 
         df_current = pd.DataFrame(data['current'])
         df_daily = pd.DataFrame(data['daily'])
@@ -155,7 +158,7 @@ class WeatherApp:
 
         #print(df)
 
-        write_api = self.client.write_api(write_options=WriteOptions(batch_size=10, flush_interval=10_000))
+        write_api = self.client.write_api(write_options=WriteOptions(batch_size=10, flush_interval=10))
 
 
         for index, row in weekly_df.iterrows():
@@ -199,7 +202,7 @@ class WeatherApp:
 
         query_curr = f"""
                 from(bucket: "{self.db_name}")
-                  |> range(start: 2024-08-01T00:00:00Z, stop: 2024-08-31T23:59:59Z)
+                  |> range(start: -2d)
                   |> filter(fn: (r) => r["_measurement"] == "{self.point_name+'_current'}")
                    |> filter(fn: (r) => r["city"] == "{self.city_name.split(' ')[0]}")
                 """
@@ -210,59 +213,79 @@ class WeatherApp:
 
         print(query_curr)
 
-        try:
+
+
+        result = query_api.query(org=self.db_org, query=query)
+
+
+        #weekly
+        records = []
+        for table in result:
+            for record in table.records:
+                records.append({
+                    "time": record.get_time(),
+                    "measurement": record.get_measurement(),
+                    "field": record.get_field(),
+                    "value": record.get_value()
+                })
+
+        df = pd.DataFrame(records)
+
+
+
+        #df['time'] = pd.to_datetime(df['time'])
+        #df["temp"] = df["temp"].astype(float)
+
+        pivot_df = df.pivot_table(index='time', columns='field', values='value', aggfunc='mean').reset_index()
+
+        print(pivot_df)
+
+        result_current = query_api.query(org=self.db_org, query=query_curr)
+        print(result_current)
+
+        while len(result_current)<1:
             result_current = query_api.query(org=self.db_org, query=query_curr)
-            result = query_api.query(org=self.db_org, query=query)
 
 
-            #weekly
-            records = []
-            for table in result:
-                for record in table.records:
-                    records.append({
-                        "time": record.get_time(),
-                        "measurement": record.get_measurement(),
-                        "field": record.get_field(),
-                        "value": record.get_value()
-                    })
-
-            df = pd.DataFrame(records)
-
-            #print(df)
-
-            #df['time'] = pd.to_datetime(df['time'])
-            #df["temp"] = df["temp"].astype(float)
-
-            pivot_df = df.pivot_table(index='time', columns='field', values='value', aggfunc='mean').reset_index()
-
-            print(pivot_df)
-
-            # current
+        if result_current:
             records_curr = []
+
             for table in result_current:
                 for record_curr in table.records:
-                    records_curr.append({
-                        "time": record_curr.get_time(),
-                        "measurement": record_curr.get_measurement(),
-                        "field": record_curr.get_field(),
-                        "value": record_curr.get_value()
-                    })
 
+                    time_val = record_curr.get_time()
+                    measurement_val = record_curr.get_measurement()
+                    field_val = record_curr.get_field()
+                    value_val = record_curr.get_value()
+
+
+                    if time_val and field_val is not None and value_val is not None:
+                        records_curr.append({
+                            "time": time_val,
+                            "measurement": measurement_val,
+                            "field": field_val,
+                            "value": value_val
+                        })
+
+            # DataFrame'e verileri aktaralım
             df_curr = pd.DataFrame(records_curr)
 
-            print('_'*20)
+            print('_' * 20)
             print(df_curr)
 
-            df_curr['time'] = pd.to_datetime(df_curr['time'])
-            #df_curr["temp"] = df_curr["temp"].astype(float)
+            # Eğer DataFrame boş değilse pivot_table işlemini gerçekleştirelim
+            if not df_curr.empty:
+                df_curr['time'] = pd.to_datetime(df_curr['time'])  # Zamanı datetime formatına çevir
+                result_current = df_curr.pivot_table(index='time', columns='field', values='value',
+                                                     aggfunc='mean').reset_index()
+                print(result_current)
+            else:
+                print("Veri yok veya boş veri döndü.")
+        else:
+            print("result_current değişkeni boş!")
 
-            result_current = df_curr.pivot_table(index='time', columns='field', values='value', aggfunc='mean').reset_index()
-
-            self.weekly_pivot_df = pivot_df
-            self.current_pivot_df = result_current
-
-        except Exception as e:
-            print(f"Bir hata oluştu: {e}")
+        self.weekly_pivot_df = pivot_df
+        self.current_pivot_df = result_current
 
 
 
