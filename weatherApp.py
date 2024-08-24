@@ -15,10 +15,14 @@ class WeatherApp:
         self.city_name = city_name
         self.city_lat = 0
         self.city_lon = 0
+        self.point_name ="weather_data"
         self.client = self.create_client()
-        self.weather_daily_data = self.get_weather_daily_data()
-        self.pivot_df = pd.DataFrame()
+        self.weekly_pivot_df,self.current_pivot_df =pd.DataFrame(),pd.DataFrame()
+        #self.weather_daily_data = self.get_weather_daily_data()
 
+
+    def get_current_weather_data(self):
+        response = requests.get(self)
 
     def get_weather_daily_data_from_db(self):
         return self.get_data_from_db()
@@ -26,6 +30,8 @@ class WeatherApp:
 
 
     def find_coordinates(self):
+
+        print('\n'*5)
         url = f'http://api.openweathermap.org/geo/1.0/direct?q={self.city_name}&appid={self.weather_key}'
 
 
@@ -44,18 +50,25 @@ class WeatherApp:
         res = requests.get(url)
         data = res.json()
 
-        df = pd.DataFrame(data['daily'])
+        df_current = pd.DataFrame(data['current'])
+        df_daily = pd.DataFrame(data['daily'])
 
-        df = df[['dt', 'temp', 'wind_speed', 'humidity']]
+        df_current = df_current[['dt', 'temp', 'wind_speed', 'humidity']]
+        df_daily = df_daily[['dt', 'temp', 'wind_speed', 'humidity']]
 
-        print('>>>>>>>>>>>>>>>>>>>>>')
-        print(self.city_name)
-        print('>>>>>>>>>>>>>>>>>>>>>')
-        df['city'] = self.city_name
-        df['datetime'] = pd.to_datetime(df['dt'], unit='s')
-        df['datetime'] = df['datetime'].dt.strftime('%Y-%m-%d')
+        #print('>>>>>>>>>>>>>>>>>>>>>')
+        # print(self.city_name)
+        # print('>>>>>>>>>>>>>>>>>>>>>')
+        df_daily['city'] = self.city_name
+        df_current['city'] = self.city_name
 
-        return df
+        df_current['datetime'] = pd.to_datetime(df_current['dt'], unit='s')
+        df_current['datetime'] = df_current['datetime'].dt.strftime('%Y-%m-%d')
+
+        df_daily['datetime'] = pd.to_datetime(df_daily['dt'], unit='s')
+        df_daily['datetime'] = df_daily['datetime'].dt.strftime('%Y-%m-%d')
+
+        return df_current,df_daily
 
     def create_client(self):
 
@@ -69,9 +82,15 @@ class WeatherApp:
 
     def modify_daily_data(self):
 
-        data_json = self.weather_daily_data.to_json(orient='records')
+        #TODO more clean code
 
-        data_dict = json.loads(data_json)
+        self.current_data,self.weather_daily_data= self.get_weather_daily_data()
+
+        current_data_json = self.current_data.to_json(orient='records')
+        weekly_data_json = self.weather_daily_data.to_json(orient='records')
+
+        weekly_data_dict = json.loads(weekly_data_json)
+        current_data_dict = json.loads(current_data_json)
 
         data = {
             "city": [],
@@ -83,30 +102,64 @@ class WeatherApp:
             "wind_speed": []
         }
 
-        for entry in data_dict:
-            data["city"].append(entry['city'])
+        for entry in weekly_data_dict:
+            data["city"].append(entry['city'].split(' ')[0])
             data["day"].append(entry['temp']['day'])
             data["humidity"].append(entry['humidity'])
             data["max"].append(entry['temp']['max'])
             data["min"].append(entry['temp']['min'])
-            data["time"].append(f"{entry['datetime']}T10:00:00Z")  #
+            data["time"].append(entry['datetime'])
             data["wind_speed"].append(entry['wind_speed'])
 
         self.weather_daily_data = data
-        print(data)
+        self.weather_daily_data_df = pd.DataFrame(data=self.weather_daily_data)
+
+        data2 = {
+            "city": [],
+            "temp": [],
+            "humidity": [],
+            "time": [],
+            "wind_speed": []
+        }
+
+        print(current_data_dict)
+
+        print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+
+        for entry in current_data_dict:
+            data2["city"].append(entry['city'].split(' ')[0])
+            data2["temp"].append(entry['temp'])
+            data2["humidity"].append(entry['humidity'])
+            data2["time"].append(entry['datetime'])
+            data2["wind_speed"].append(entry['wind_speed'])
+
+        self.weather_current_data = data2
+        self.weather_current_data_df = pd.DataFrame(data=self.weather_current_data)
+
+        print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+
+        print(self.weather_current_data_df.info())
+
+
+
+
+        return self.weather_current_data_df,self.weather_daily_data_df
 
 
     def store_weather_daily_data(self):
 
 
-        self.modify_daily_data()
+        current_df,weekly_df = self.modify_daily_data()
 
-        write_api = self.client.write_api(write_options=WriteOptions(batch_size=1_000, flush_interval=10_000))
+        print(current_df)
 
-        df = pd.DataFrame(self.weather_daily_data)
+        #print(df)
 
-        for index, row in df.iterrows():
-            point = Point("weather_data") \
+        write_api = self.client.write_api(write_options=WriteOptions(batch_size=10, flush_interval=10_000))
+
+
+        for index, row in weekly_df.iterrows():
+            point = Point(self.point_name) \
                 .tag("city", row["city"]) \
                 .field("day", row["day"]) \
                 .field("humidity", row["humidity"]) \
@@ -114,7 +167,21 @@ class WeatherApp:
                 .field("min", row["min"]) \
                 .field("wind_speed", row["wind_speed"]) \
                 .time(row["time"])
+            print(point)
             write_api.write(bucket=self.db_name, org=self.db_org, record=point)
+
+        time.sleep(10)
+
+        for index, row in current_df.iterrows():
+            point = Point(self.point_name+'_current') \
+                .tag("city", row["city"]) \
+                .field("temp", float(row["temp"])) \
+                .field("humidity", row["humidity"]) \
+                .field("wind_speed", row["wind_speed"]) \
+                .time(row["time"])
+            print(point)
+            write_api.write(bucket=self.db_name, org=self.db_org, record=point)
+
 
 
         print("Complete. Return to the InfluxDB UI.")
@@ -123,15 +190,32 @@ class WeatherApp:
 
         query_api = self.client.query_api()
 
-        query = """
-        from(bucket: "Test")
+        query = f"""
+        from(bucket: "{self.db_name}")
           |> range(start: 2024-08-01T00:00:00Z, stop: 2024-08-31T23:59:59Z)
-          |> filter(fn: (r) => r["_measurement"] == "weather_data")
+          |> filter(fn: (r) => r["_measurement"] == "{self.point_name}")
+           |> filter(fn: (r) => r["city"] == "{self.city_name.split(' ')[0]}")
         """
 
+        query_curr = f"""
+                from(bucket: "{self.db_name}")
+                  |> range(start: 2024-08-01T00:00:00Z, stop: 2024-08-31T23:59:59Z)
+                  |> filter(fn: (r) => r["_measurement"] == "{self.point_name+'_current'}")
+                   |> filter(fn: (r) => r["city"] == "{self.city_name.split(' ')[0]}")
+                """
+
+        print(query)
+
+        print('_'*20)
+
+        print(query_curr)
+
         try:
+            result_current = query_api.query(org=self.db_org, query=query_curr)
             result = query_api.query(org=self.db_org, query=query)
 
+
+            #weekly
             records = []
             for table in result:
                 for record in table.records:
@@ -144,13 +228,38 @@ class WeatherApp:
 
             df = pd.DataFrame(records)
 
-            df['time'] = pd.to_datetime(df['time'])
+            #print(df)
+
+            #df['time'] = pd.to_datetime(df['time'])
+            #df["temp"] = df["temp"].astype(float)
 
             pivot_df = df.pivot_table(index='time', columns='field', values='value', aggfunc='mean').reset_index()
 
             print(pivot_df)
 
-            self.pivot_df = pivot_df
+            # current
+            records_curr = []
+            for table in result_current:
+                for record_curr in table.records:
+                    records_curr.append({
+                        "time": record_curr.get_time(),
+                        "measurement": record_curr.get_measurement(),
+                        "field": record_curr.get_field(),
+                        "value": record_curr.get_value()
+                    })
+
+            df_curr = pd.DataFrame(records_curr)
+
+            print('_'*20)
+            print(df_curr)
+
+            df_curr['time'] = pd.to_datetime(df_curr['time'])
+            #df_curr["temp"] = df_curr["temp"].astype(float)
+
+            result_current = df_curr.pivot_table(index='time', columns='field', values='value', aggfunc='mean').reset_index()
+
+            self.weekly_pivot_df = pivot_df
+            self.current_pivot_df = result_current
 
         except Exception as e:
             print(f"Bir hata oluştu: {e}")
