@@ -1,23 +1,28 @@
 import requests
 import time, json
-from influxdb_client_3 import InfluxDBClient3, Point, WritePrecision
-from influxdb_client import InfluxDBClient
+from influxdb_client import InfluxDBClient, Point, WriteOptions
 import pandas as pd
-import tabulate
+#!pip install tabulate
 
 class WeatherApp:
-    def __init__(self):
+    def __init__(self,city_name):
         self.weather_key = "2d300cd42548efadf84eb44c352f98cf"
         self.weather_url = "http://api.openweathermap.org"
         self.db_token = "fBAUCTCV-fhFJP-5O-2OX7wCjuLdGXAL2XiLsHqD2wj1ZFkS-_uWXC9oqTE2PK6-UpAv74uennRGTJDEBKYWqA=="
         self.host = "https://eu-central-1-1.aws.cloud2.influxdata.com"
         self.db_org = "Team"
         self.db_name = "Test"
-        self.city_name = ""
+        self.city_name = city_name
         self.city_lat = 0
         self.city_lon = 0
         self.client = self.create_client()
         self.weather_daily_data = self.get_weather_daily_data()
+        self.pivot_df = pd.DataFrame()
+
+
+    def get_weather_daily_data_from_db(self):
+        return self.get_data_from_db()
+
 
 
     def find_coordinates(self):
@@ -43,6 +48,13 @@ class WeatherApp:
 
         df = df[['dt', 'temp', 'wind_speed', 'humidity']]
 
+        print('>>>>>>>>>>>>>>>>>>>>>')
+        print(self.city_name)
+        print('>>>>>>>>>>>>>>>>>>>>>')
+        df['city'] = self.city_name
+        df['datetime'] = pd.to_datetime(df['dt'], unit='s')
+        df['datetime'] = df['datetime'].dt.strftime('%Y-%m-%d')
+
         return df
 
     def create_client(self):
@@ -51,66 +63,97 @@ class WeatherApp:
         org = self.db_org
         host = self.host
 
-        self.client = InfluxDBClient3(host=host, token=token, org=org)
+        client = InfluxDBClient(url=host, token=token, org=org)
 
-    def delete_unnecessary_data(self):
+        return client
+
+    def modify_daily_data(self):
 
         data_json = self.weather_daily_data.to_json(orient='records')
 
         data_dict = json.loads(data_json)
 
-        for entry in data_dict:
-            temp = entry['temp']
-            if 'night' in temp:
-                del temp['night']
-            if 'eve' in temp:
-                del temp['eve']
-            if 'morn' in temp:
-                del temp['morn']
+        data = {
+            "city": [],
+            "day": [],
+            "humidity": [],
+            "max": [],
+            "min": [],
+            "time": [],
+            "wind_speed": []
+        }
 
-        self.weather_daily_data = data_dict
+        for entry in data_dict:
+            data["city"].append(entry['city'])
+            data["day"].append(entry['temp']['day'])
+            data["humidity"].append(entry['humidity'])
+            data["max"].append(entry['temp']['max'])
+            data["min"].append(entry['temp']['min'])
+            data["time"].append(f"{entry['datetime']}T10:00:00Z")  #
+            data["wind_speed"].append(entry['wind_speed'])
+
+        self.weather_daily_data = data
+        print(data)
 
 
     def store_weather_daily_data(self):
 
 
-        database = self.db_name
+        self.modify_daily_data()
 
-        self.delete_unnecessary_data()
+        write_api = self.client.write_api(write_options=WriteOptions(batch_size=1_000, flush_interval=10_000))
 
-        for entry in self.weather_daily_data:
-            point = Point("weather") \
-                .tag("city", entry["city"]) \
-                .time("_time", entry["datetime"]) \
-                .field("day", entry["temp"]["day"]) \
-                .field("min", entry["temp"]["min"]) \
-                .field("max", entry["temp"]["max"]) \
-                .field("wind_speed", entry["wind_speed"]) \
-                .field("humidity", entry["humidity"]) \
-                .time(pd.to_datetime(entry["dt"], unit='s'), WritePrecision.S)
+        df = pd.DataFrame(self.weather_daily_data)
 
-            self.client.write(database=database, record=point)
-            time.sleep(1)
+        for index, row in df.iterrows():
+            point = Point("weather_data") \
+                .tag("city", row["city"]) \
+                .field("day", row["day"]) \
+                .field("humidity", row["humidity"]) \
+                .field("max", row["max"]) \
+                .field("min", row["min"]) \
+                .field("wind_speed", row["wind_speed"]) \
+                .time(row["time"])
+            write_api.write(bucket=self.db_name, org=self.db_org, record=point)
 
 
         print("Complete. Return to the InfluxDB UI.")
 
     def get_data_from_db(self):
 
+        query_api = self.client.query_api()
 
-        client = InfluxDBClient(url=self.host, token=self.db_token, org=self.db_org)
-
-        query = '''
+        query = """
         from(bucket: "Test")
-          |> range(start: -1d)  // Adjust the time range as needed
-          |> filter(fn: (r) => r["_measurement"] == "weather")
-        '''
+          |> range(start: 2024-08-01T00:00:00Z, stop: 2024-08-31T23:59:59Z)
+          |> filter(fn: (r) => r["_measurement"] == "weather_data")
+        """
 
-        # Execute the query
-        tables = client.query_api().query(query=query, org=self.db_org)
+        try:
+            result = query_api.query(org=self.db_org, query=query)
 
-        # Convert to DataFrame
-        df = pd.DataFrame([record.values for table in tables for record in table.records])
+            records = []
+            for table in result:
+                for record in table.records:
+                    records.append({
+                        "time": record.get_time(),
+                        "measurement": record.get_measurement(),
+                        "field": record.get_field(),
+                        "value": record.get_value()
+                    })
 
-        return df
+            df = pd.DataFrame(records)
+
+            df['time'] = pd.to_datetime(df['time'])
+
+            pivot_df = df.pivot_table(index='time', columns='field', values='value', aggfunc='mean').reset_index()
+
+            print(pivot_df)
+
+            self.pivot_df = pivot_df
+
+        except Exception as e:
+            print(f"Bir hata oluştu: {e}")
+
+
 
