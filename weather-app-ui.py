@@ -14,7 +14,6 @@ show = st.button('Show')
 placeholder = st.empty()
 
 result = st.container()
-current = st.container()
 
 
 CityCol, TempCol, HumCol, WindCol = st.columns([3,3,2,2])
@@ -41,33 +40,10 @@ if show:
         placeholder.success("Done!")
         placeholder.empty()
 
-        forecast = st.container()
 
-        with forecast:
-
-            columns = st.columns(5)
-
-            for i, col in enumerate(columns):
-                with col:
-                    with st.container(border=True):
-                        st.write(str(wApp.weekly_pivot_df.iloc[i+1]['time'].strftime('%m/%d/%Y')))
-                        st.caption(str(wApp.weekly_pivot_df.iloc[i+1]['min']) + str('°C') + "-" + str(wApp.weekly_pivot_df.iloc[i+1]['max']) + str('°C'))
-
-                        icon = str(wApp.weekly_pivot_df.iloc[i+1]['icon'])
-                        icon = '0' + icon.replace('.0', 'd') + '.png'
-                        st.image('icons/' + icon, width=75)
-
-                        hum, wind = st.columns(2)
-
-                        with hum:
-                            st.caption(str(wApp.weekly_pivot_df.iloc[i+1]['humidity']) + str(' %'))
-
-                        with wind:
-                            st.caption(str(wApp.weekly_pivot_df.iloc[i+1]['wind_speed']) + str(' km/h'))
-
-        with current:
+        with st.container():
             with CityCol:
-                st.header(wApp.city_name)
+                st.title(wApp.city_name)
                 st.caption(str(wApp.current_pivot_df.iloc[0]['time'].strftime('%m/%d/%Y')))
 
             with TempCol:
@@ -77,7 +53,6 @@ if show:
                     icon = str(wApp.current_pivot_df.iloc[0]['icon'])
                     icon = '0' + icon.replace('.0','d') + '.png'
                     st.image('icons/'+icon)
-                    #.....
 
                 with info:
                     st.caption('Temperature')
@@ -92,3 +67,28 @@ if show:
                 st.caption('Wind Speed')
                 st.subheader(str(wApp.current_pivot_df.iloc[0]['wind_speed']) + str(' km/h'))
 
+    with st.spinner():
+
+        columns = st.columns(5)
+
+        for i, col in enumerate(columns):
+            with col:
+                with st.container(border=True):
+                    st.subheader(str(wApp.weekly_pivot_df.iloc[i+1]['time'].strftime('%m/%d/%Y')))
+                    st.write(str(round(wApp.weekly_pivot_df.iloc[i+1]['max'])) + str('°C') + "  -  " + str(round(wApp.weekly_pivot_df.iloc[i+1]['min'])) + str('°C'))
+
+                    col1,iconCol,col2 = st.columns([1,2,1])
+                    with iconCol:
+                        icon = str(wApp.weekly_pivot_df.iloc[i+1]['icon'])
+                        icon = '0' + icon.replace('.0', 'd') + '.png'
+                        st.image('icons/' + icon, width=75)
+
+                    hum, wind = st.columns(2)
+
+                    with hum:
+                        st.caption('Humidity')
+                        st.write(str(wApp.weekly_pivot_df.iloc[i+1]['humidity']) + str(' %'))
+
+                    with wind:
+                        st.caption('Wind Speed')
+                        st.write(str(wApp.weekly_pivot_df.iloc[i+1]['wind_speed']) + str(' km/h'))
