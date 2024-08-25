@@ -92,3 +92,8 @@ if show:
                     with wind:
                         st.caption('Wind Speed')
                         st.write(str(wApp.weekly_pivot_df.iloc[i+1]['wind_speed']) + str(' km/h'))
+
+with st.expander('developed by M. Furkan Ince'):
+    st.markdown('This project is open to all kinds of improvements')
+    st.markdown('if you would like to contact: mfrknince@gmail.com or :gray-background[@mfrknince] on social ')
+

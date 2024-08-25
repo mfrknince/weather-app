@@ -1,3 +1,7 @@
+'''
+author = @mfrknince on social
+'''
+
 import requests
 import time, json
 from influxdb_client import InfluxDBClient, Point, WriteOptions
@@ -18,11 +22,7 @@ class WeatherApp:
         self.point_name ="weather_data"
         self.client = self.create_client()
         self.weekly_pivot_df,self.current_pivot_df =pd.DataFrame(),pd.DataFrame()
-        #self.weather_daily_data = self.get_weather_daily_data()
 
-
-    def get_current_weather_data(self):
-        response = requests.get(self)
 
     def get_weather_daily_data_from_db(self):
         return self.get_data_from_db()
@@ -31,6 +31,7 @@ class WeatherApp:
 
     def find_coordinates(self):
 
+        print('Welcome to Weather App')
         print('\n'*5)
         url = f'http://api.openweathermap.org/geo/1.0/direct?q={self.city_name}&appid={self.weather_key}'
 
@@ -51,10 +52,6 @@ class WeatherApp:
 
         res = requests.get(url)
         data = res.json()
-        #data = json.load(res)
-
-        print(data)
-
 
         df_current = pd.DataFrame(data['current'])
         df_daily = pd.DataFrame(data['daily'])
@@ -65,11 +62,6 @@ class WeatherApp:
         df_current = df_current[['dt', 'temp', 'wind_speed', 'humidity','icon']]
         df_daily = df_daily[['dt', 'temp', 'wind_speed', 'humidity','icon']]
 
-        #print(df_daily.info())
-
-        print('>>>>>>>>>>>>>>>>>>>>>')
-        # print(self.city_name)
-        print('>>>>>>>>>>>>>>>>>>>>>')
         df_daily['city'] = self.city_name
         df_current['city'] = self.city_name
 
@@ -96,7 +88,6 @@ class WeatherApp:
 
     def modify_daily_data(self):
 
-        #TODO more clean code
 
         self.current_data,self.weather_daily_data= self.get_weather_daily_data()
 
@@ -139,9 +130,6 @@ class WeatherApp:
             "icon":[]
         }
 
-        print(current_data_dict)
-
-        print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
 
         for entry in current_data_dict:
             data2["city"].append(entry['city'].split(' ')[0])
@@ -154,13 +142,6 @@ class WeatherApp:
         self.weather_current_data = data2
         self.weather_current_data_df = pd.DataFrame(data=self.weather_current_data)
 
-        print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-
-        print(self.weather_current_data_df.info())
-
-
-
-
         return self.weather_current_data_df,self.weather_daily_data_df
 
 
@@ -169,9 +150,6 @@ class WeatherApp:
 
         current_df,weekly_df = self.modify_daily_data()
 
-        print(current_df)
-
-        #print(df)
 
         write_api = self.client.write_api(write_options=WriteOptions(batch_size=10, flush_interval=10))
 
@@ -224,14 +202,6 @@ class WeatherApp:
                    |> filter(fn: (r) => r["city"] == "{self.city_name.split(' ')[0]}")
                 """
 
-        print(query)
-
-        print('_'*20)
-
-        print(query_curr)
-
-
-
         result = query_api.query(org=self.db_org, query=query)
 
 
@@ -247,18 +217,10 @@ class WeatherApp:
                 })
 
         df = pd.DataFrame(records)
-        print("\n"*4)
-
-        print(df['value'])
-
-        #print(df.info())
 
         pivot_df = df.pivot_table(index='time', columns='field', values='value', aggfunc='mean').reset_index()
 
-        print(pivot_df)
-
         result_current = query_api.query(org=self.db_org, query=query_curr)
-        print(result_current)
 
         while len(result_current)<1:
             result_current = query_api.query(org=self.db_org, query=query_curr)
@@ -284,22 +246,17 @@ class WeatherApp:
                             "value": value_val
                         })
 
-            # DataFrame'e verileri aktaralım
             df_curr = pd.DataFrame(records_curr)
 
-            print('_' * 20)
-            print(df_curr)
-
-            # Eğer DataFrame boş değilse pivot_table işlemini gerçekleştirelim
             if not df_curr.empty:
                 df_curr['time'] = pd.to_datetime(df_curr['time'])  # Zamanı datetime formatına çevir
                 result_current = df_curr.pivot_table(index='time', columns='field', values='value',
                                                      aggfunc='mean').reset_index()
                 print(result_current)
             else:
-                print("Veri yok veya boş veri döndü.")
+                print("No data")
         else:
-            print("result_current değişkeni boş!")
+            print("result_current is None")
 
         self.weekly_pivot_df = pivot_df
         self.current_pivot_df = result_current
