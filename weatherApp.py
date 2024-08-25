@@ -51,17 +51,25 @@ class WeatherApp:
 
         res = requests.get(url)
         data = res.json()
+        #data = json.load(res)
+
+        print(data)
 
 
         df_current = pd.DataFrame(data['current'])
         df_daily = pd.DataFrame(data['daily'])
 
-        df_current = df_current[['dt', 'temp', 'wind_speed', 'humidity']]
-        df_daily = df_daily[['dt', 'temp', 'wind_speed', 'humidity']]
+        df_current['icon'] = df_current.iloc[0]['weather']['icon'][:-1]
+        df_daily['icon'] = df_daily['weather'].apply(lambda x: x[0]['icon'][:-1]).to_frame(name='icon')
 
-        #print('>>>>>>>>>>>>>>>>>>>>>')
+        df_current = df_current[['dt', 'temp', 'wind_speed', 'humidity','icon']]
+        df_daily = df_daily[['dt', 'temp', 'wind_speed', 'humidity','icon']]
+
+        #print(df_daily.info())
+
+        print('>>>>>>>>>>>>>>>>>>>>>')
         # print(self.city_name)
-        # print('>>>>>>>>>>>>>>>>>>>>>')
+        print('>>>>>>>>>>>>>>>>>>>>>')
         df_daily['city'] = self.city_name
         df_current['city'] = self.city_name
 
@@ -70,6 +78,9 @@ class WeatherApp:
 
         df_daily['datetime'] = pd.to_datetime(df_daily['dt'], unit='s')
         df_daily['datetime'] = df_daily['datetime'].dt.strftime('%Y-%m-%d')
+
+        df_current['icon'] = df_daily['icon'].astype(float)
+        df_daily['icon']=df_daily['icon'].astype(float)
 
         return df_current,df_daily
 
@@ -102,7 +113,8 @@ class WeatherApp:
             "max": [],
             "min": [],
             "time": [],
-            "wind_speed": []
+            "wind_speed": [],
+            "icon":[]
         }
 
         for entry in weekly_data_dict:
@@ -113,6 +125,7 @@ class WeatherApp:
             data["min"].append(entry['temp']['min'])
             data["time"].append(entry['datetime'])
             data["wind_speed"].append(entry['wind_speed'])
+            data["icon"].append(entry['icon'])
 
         self.weather_daily_data = data
         self.weather_daily_data_df = pd.DataFrame(data=self.weather_daily_data)
@@ -122,7 +135,8 @@ class WeatherApp:
             "temp": [],
             "humidity": [],
             "time": [],
-            "wind_speed": []
+            "wind_speed": [],
+            "icon":[]
         }
 
         print(current_data_dict)
@@ -135,6 +149,7 @@ class WeatherApp:
             data2["humidity"].append(entry['humidity'])
             data2["time"].append(entry['datetime'])
             data2["wind_speed"].append(entry['wind_speed'])
+            data2["icon"].append(entry['icon'])
 
         self.weather_current_data = data2
         self.weather_current_data_df = pd.DataFrame(data=self.weather_current_data)
@@ -169,6 +184,7 @@ class WeatherApp:
                 .field("max", row["max"]) \
                 .field("min", row["min"]) \
                 .field("wind_speed", row["wind_speed"]) \
+                .field("icon",row["icon"])\
                 .time(row["time"])
             print(point)
             write_api.write(bucket=self.db_name, org=self.db_org, record=point)
@@ -181,6 +197,7 @@ class WeatherApp:
                 .field("temp", float(row["temp"])) \
                 .field("humidity", row["humidity"]) \
                 .field("wind_speed", row["wind_speed"]) \
+                .field("icon",row["icon"]) \
                 .time(row["time"])
             print(point)
             write_api.write(bucket=self.db_name, org=self.db_org, record=point)
@@ -230,11 +247,11 @@ class WeatherApp:
                 })
 
         df = pd.DataFrame(records)
+        print("\n"*4)
 
+        print(df['value'])
 
-
-        #df['time'] = pd.to_datetime(df['time'])
-        #df["temp"] = df["temp"].astype(float)
+        #print(df.info())
 
         pivot_df = df.pivot_table(index='time', columns='field', values='value', aggfunc='mean').reset_index()
 
