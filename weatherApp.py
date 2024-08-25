@@ -15,7 +15,7 @@ class WeatherApp:
         self.db_token = "fBAUCTCV-fhFJP-5O-2OX7wCjuLdGXAL2XiLsHqD2wj1ZFkS-_uWXC9oqTE2PK6-UpAv74uennRGTJDEBKYWqA=="
         self.host = "https://eu-central-1-1.aws.cloud2.influxdata.com"
         self.db_org = "Team"
-        self.db_name = "Test"
+        self.db_name = "Weather"
         self.city_name = city_name
         self.city_lat = 0
         self.city_lon = 0
