@@ -7,6 +7,10 @@ If you want to try Live Demo:
 
 https://mfrknince-weather-app.streamlit.app/
 
+or you can try locak using:
+
+streamlit run ./weather-app-ui.py
+
 M.Furkan Ince
 Computer Engineer - Data Scientist
 @mfrknince on social
