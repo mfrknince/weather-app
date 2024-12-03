@@ -3,13 +3,20 @@ Python-based system that fetches real-time weather data for a user's current loc
 
 using https://openweathermap.org/ API
 
-If you want to try Live Demo:
 
+If you want to try Live Demo:
 https://mfrknince-weather-app.streamlit.app/
 
-or you can try locak using:
+
+
+https://github.com/user-attachments/assets/ad64f10c-d2fa-4431-8dda-e29f04d698e7
+
+
+or you can try local using:
 
 streamlit run ./weather-app-ui.py
+
+
 
 M.Furkan Ince
 Computer Engineer - Data Scientist
